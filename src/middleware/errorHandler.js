@@ -10,7 +10,7 @@ export const errorHandler = (error, req, res, next) => {
   if (error.code === "23505")
     return res.status(409).json({
       error:
-        "A record with this code, barcode, username, or reference already exists.",
+        "A record with this code, barcode, username, or reference already exists. ",
     });
   if (error.code === "23503")
     return res.status(400).json({
