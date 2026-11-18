@@ -21,7 +21,7 @@ import { register as reports } from "./routes/reports.js";
 import { register as backup } from "./routes/backup.js";
 
 export const app = express();
-const origin = process.env.FRONTEND_URL || "http://127.0.0.1:5173";
+const origin = new URL(process.env.FRONTEND_URL || "http://127.0.0.1:5173").origin;
 app.use(helmet());
 app.use(cors({ origin, credentials: true }));
 app.use(express.json({ limit: "2mb" }));

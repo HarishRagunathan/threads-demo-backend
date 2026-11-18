@@ -6,8 +6,10 @@ import bcrypt from "bcryptjs";
 import { fail } from "../lib/errors.js";
 import { randomBytes } from "node:crypto";
 import { hash, publicUser } from "../lib/auth.js";
+import { sessionCookieOptions } from "../config/session.js";
 
 export function register(app) {
+  const cookieOptions = sessionCookieOptions();
   app.post(
     "/api/auth/login",
     rateLimit({ windowMs: 15 * 60 * 1000, limit: 30 }),
@@ -31,9 +33,7 @@ export function register(app) {
       await audit(pool, user, "login", "users", user.id);
       res
         .cookie("session", token, {
-          httpOnly: true,
-          sameSite: "strict",
-          secure: process.env.NODE_ENV === "production",
+          ...cookieOptions,
           maxAge: 43200000,
         })
         .json(publicUser(user));
@@ -59,7 +59,7 @@ export function register(app) {
     await pool.query("DELETE FROM sessions WHERE token_hash=$1", [
       hash(req.cookies.session),
     ]);
-    res.clearCookie("session").json({ ok: true });
+    res.clearCookie("session", cookieOptions).json({ ok: true });
   });
 
   app.post("/api/auth/password", async (req, res) => {
@@ -76,6 +76,6 @@ export function register(app) {
       await db.query("DELETE FROM sessions WHERE user_id=$1", [req.user.id]);
       await audit(db, req.user, "password changed", "users", req.user.id);
     });
-    res.clearCookie("session").json({ ok: true });
+    res.clearCookie("session", cookieOptions).json({ ok: true });
   });
 }
