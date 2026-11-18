@@ -1,0 +1,48 @@
+CREATE TABLE IF NOT EXISTS users (
+ id SERIAL PRIMARY KEY, name TEXT NOT NULL, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
+ role TEXT NOT NULL CHECK(role IN ('admin','staff')), permissions TEXT[] NOT NULL DEFAULT '{}', mobile TEXT DEFAULT '', active BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),expires_at TIMESTAMPTZ NOT NULL);
+CREATE TABLE IF NOT EXISTS categories(id SERIAL PRIMARY KEY,name TEXT NOT NULL UNIQUE,active BOOLEAN NOT NULL DEFAULT true);
+CREATE TABLE IF NOT EXISTS brands(id SERIAL PRIMARY KEY,name TEXT NOT NULL UNIQUE,active BOOLEAN NOT NULL DEFAULT true);
+CREATE TABLE IF NOT EXISTS products(
+ id SERIAL PRIMARY KEY,name TEXT NOT NULL,code TEXT NOT NULL UNIQUE,barcode TEXT NOT NULL UNIQUE,
+ category_id INTEGER REFERENCES categories(id),brand_id INTEGER REFERENCES brands(id),image TEXT DEFAULT '',
+ purchase_price NUMERIC(14,2) NOT NULL CHECK(purchase_price>=0),selling_price NUMERIC(14,2) NOT NULL CHECK(selling_price>=0),
+ gst_rate NUMERIC(5,2) NOT NULL DEFAULT 5 CHECK(gst_rate>=0 AND gst_rate<=100),hsn TEXT DEFAULT '',
+ stock INTEGER NOT NULL DEFAULT 0 CHECK(stock>=0),min_stock INTEGER NOT NULL DEFAULT 5 CHECK(min_stock>=0),
+ description TEXT DEFAULT '',active BOOLEAN NOT NULL DEFAULT true,created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS customers(id SERIAL PRIMARY KEY,name TEXT NOT NULL,mobile TEXT DEFAULT '',email TEXT DEFAULT '',address TEXT DEFAULT '',active BOOLEAN NOT NULL DEFAULT true);
+CREATE TABLE IF NOT EXISTS suppliers(id SERIAL PRIMARY KEY,name TEXT NOT NULL,contact_person TEXT DEFAULT '',mobile TEXT DEFAULT '',email TEXT DEFAULT '',address TEXT DEFAULT '',gstin TEXT DEFAULT '',active BOOLEAN NOT NULL DEFAULT true);
+CREATE TABLE IF NOT EXISTS documents(
+ id SERIAL PRIMARY KEY,number TEXT UNIQUE NOT NULL,kind TEXT NOT NULL CHECK(kind IN('sale','purchase')),customer_id INTEGER REFERENCES customers(id),supplier_id INTEGER REFERENCES suppliers(id),
+ user_id INTEGER NOT NULL REFERENCES users(id),status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN('completed','cancelled')),
+ subtotal NUMERIC(14,2) NOT NULL,tax NUMERIC(14,2) NOT NULL,total NUMERIC(14,2) NOT NULL,
+ tax_mode TEXT NOT NULL DEFAULT 'intra',reference TEXT DEFAULT '',idempotency_key UUID NOT NULL UNIQUE,created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS document_items(
+ id SERIAL PRIMARY KEY,document_id INTEGER NOT NULL REFERENCES documents(id),product_id INTEGER NOT NULL REFERENCES products(id),
+ product_name TEXT NOT NULL,product_code TEXT NOT NULL,hsn TEXT DEFAULT '',quantity INTEGER NOT NULL CHECK(quantity>0),
+ price NUMERIC(14,2) NOT NULL,cost NUMERIC(14,2) NOT NULL,discount NUMERIC(14,2) NOT NULL DEFAULT 0,gst_rate NUMERIC(5,2) NOT NULL,
+ taxable NUMERIC(14,2) NOT NULL,tax NUMERIC(14,2) NOT NULL,total NUMERIC(14,2) NOT NULL,returned INTEGER NOT NULL DEFAULT 0 CHECK(returned>=0 AND returned<=quantity)
+);
+CREATE TABLE IF NOT EXISTS payments(
+ id SERIAL PRIMARY KEY,document_id INTEGER NOT NULL REFERENCES documents(id),amount NUMERIC(14,2) NOT NULL CHECK(amount>0),
+ method TEXT NOT NULL CHECK(method IN('Cash','UPI','Card','Demo gateway')),reference TEXT DEFAULT '',is_refund BOOLEAN NOT NULL DEFAULT false,idempotency_key UUID NOT NULL UNIQUE,
+ user_id INTEGER NOT NULL REFERENCES users(id),created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS returns(
+ id SERIAL PRIMARY KEY,document_id INTEGER NOT NULL REFERENCES documents(id),item_id INTEGER NOT NULL REFERENCES document_items(id),quantity INTEGER NOT NULL CHECK(quantity>0),
+ amount NUMERIC(14,2) NOT NULL,reason TEXT NOT NULL,condition TEXT NOT NULL CHECK(condition IN('sellable','damaged')),user_id INTEGER NOT NULL REFERENCES users(id),idempotency_key UUID UNIQUE NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS stock_movements(id SERIAL PRIMARY KEY,product_id INTEGER NOT NULL REFERENCES products(id),quantity INTEGER NOT NULL,reason TEXT NOT NULL,document_id INTEGER REFERENCES documents(id),user_id INTEGER REFERENCES users(id),created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS expenses(id SERIAL PRIMARY KEY,category TEXT NOT NULL,description TEXT NOT NULL,amount NUMERIC(14,2) NOT NULL CHECK(amount>0),date DATE NOT NULL DEFAULT CURRENT_DATE,method TEXT NOT NULL DEFAULT 'Cash',notes TEXT DEFAULT '',user_id INTEGER REFERENCES users(id));
+CREATE TABLE IF NOT EXISTS held_bills(id SERIAL PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),label TEXT NOT NULL,data JSONB NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS shifts(id SERIAL PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),opening_cash NUMERIC(14,2) NOT NULL,closing_cash NUMERIC(14,2),opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),closed_at TIMESTAMPTZ);
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_shift ON shifts(user_id) WHERE closed_at IS NULL;
+CREATE TABLE IF NOT EXISTS audit_logs(id SERIAL PRIMARY KEY,user_id INTEGER REFERENCES users(id),action TEXT NOT NULL,entity TEXT NOT NULL,entity_id TEXT,detail JSONB DEFAULT '{}',created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),data JSONB NOT NULL);
+CREATE SEQUENCE IF NOT EXISTS invoice_seq;
+CREATE INDEX IF NOT EXISTS documents_date_idx ON documents(created_at);
+CREATE INDEX IF NOT EXISTS stock_product_idx ON stock_movements(product_id);
